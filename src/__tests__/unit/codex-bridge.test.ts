@@ -43,7 +43,7 @@ describe('Codex Bridge — runCodexChat', () => {
   beforeEach(() => vi.resetModules());
 
   it('resolves with stdout on success', async () => {
-    vi.mock('child_process', () => {
+    vi.doMock('child_process', () => {
       const EventEmitter = require('events');
       return {
         spawnSync: vi.fn().mockReturnValue({ status: 0, stdout: '/usr/bin/codex\n', stderr: '' }),
@@ -66,7 +66,7 @@ describe('Codex Bridge — runCodexChat', () => {
   });
 
   it('rejects with CodexTimeoutError when process exceeds timeout', async () => {
-    vi.mock('child_process', () => {
+    vi.doMock('child_process', () => {
       const EventEmitter = require('events');
       return {
         spawnSync: vi.fn().mockReturnValue({ status: 0, stdout: '/usr/bin/codex\n', stderr: '' }),
@@ -81,13 +81,15 @@ describe('Codex Bridge — runCodexChat', () => {
       };
     });
     const { runCodexChat } = await import('../../codex/bridge.js');
+    // Import types from the same fresh module registry so instanceof works across resetModules()
+    const { CodexTimeoutError: FreshCodexTimeoutError } = await import('../../session/types.js');
     await expect(
       runCodexChat('/tmp/worktree', MOCK_BRIEF, 'question', 50),
-    ).rejects.toThrow(CodexTimeoutError);
+    ).rejects.toThrow(FreshCodexTimeoutError);
   });
 
   it('rejects with CodexExecutionError on non-zero exit', async () => {
-    vi.mock('child_process', () => {
+    vi.doMock('child_process', () => {
       const EventEmitter = require('events');
       return {
         spawnSync: vi.fn().mockReturnValue({ status: 0, stdout: '/usr/bin/codex\n', stderr: '' }),
@@ -105,9 +107,11 @@ describe('Codex Bridge — runCodexChat', () => {
       };
     });
     const { runCodexChat } = await import('../../codex/bridge.js');
+    // Import types from the same fresh module registry so instanceof works across resetModules()
+    const { CodexExecutionError: FreshCodexExecutionError } = await import('../../session/types.js');
     await expect(
       runCodexChat('/tmp/worktree', MOCK_BRIEF, 'question'),
-    ).rejects.toThrow(CodexExecutionError);
+    ).rejects.toThrow(FreshCodexExecutionError);
   });
 });
 
