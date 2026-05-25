@@ -2,7 +2,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import { saveSession } from '../session/manager.js';
-import { createWorktree } from '../worktree/manager.js';
+import { createWorktree, removeWorktree } from '../worktree/manager.js';
 import { EMPTY_BRIEF } from '../session/types.js';
 import type { Session } from '../session/types.js';
 
@@ -41,6 +41,13 @@ export async function createSession(
     updatedAt: now,
   };
 
-  await saveSession(session);
+  try {
+    await saveSession(session);
+  } catch (err) {
+    // Clean up the worktree if session file creation fails
+    removeWorktree(input.project_path, worktreePath, branch, true);
+    throw err;
+  }
+
   return { session_id: id, worktree_path: worktreePath, branch };
 }

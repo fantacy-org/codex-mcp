@@ -3,10 +3,10 @@ import { spawn, spawnSync } from 'child_process';
 import type { Brief } from '../session/types.js';
 import { CodexNotFoundError, CodexTimeoutError, CodexExecutionError } from '../session/types.js';
 
-const DEFAULT_TIMEOUT_MS = parseInt(
-  process.env['CODEX_MCP_TIMEOUT_MS'] ?? '300000',
-  10,
-);
+const DEFAULT_TIMEOUT_MS = (() => {
+  const parsed = parseInt(process.env['CODEX_MCP_TIMEOUT_MS'] ?? '', 10);
+  return Number.isNaN(parsed) ? 300000 : parsed;
+})();
 
 // Args passed to every Codex CLI invocation for non-interactive execution.
 // Verify against installed Codex CLI version if behaviour is unexpected.
@@ -18,7 +18,19 @@ export function findCodexCli(): string {
   if (result.status !== 0 || !result.stdout.trim()) {
     throw new CodexNotFoundError();
   }
-  return result.stdout.trim().split('\n')[0].trim();
+
+  const lines = result.stdout.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+
+  if (process.platform === 'win32') {
+    // On Windows, prefer .cmd shim (executable by spawn without shell)
+    const cmdPath = lines.find((l) => l.toLowerCase().endsWith('.cmd'));
+    if (cmdPath) return cmdPath;
+    // Fall back to .exe if .cmd not found
+    const exePath = lines.find((l) => l.toLowerCase().endsWith('.exe'));
+    if (exePath) return exePath;
+  }
+
+  return lines[0];
 }
 
 export function buildChatPrompt(brief: Brief, message: string): string {
@@ -62,7 +74,7 @@ function runCodex(
     const codexPath = findCodexCli();
     const child = spawn(codexPath, [...CODEX_NONINTERACTIVE_ARGS, prompt], {
       cwd,
-      shell: false,
+      shell: process.platform === 'win32', // .cmd files require shell on Windows
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

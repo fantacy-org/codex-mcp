@@ -19,11 +19,18 @@ export async function implement(input: ImplementInput): Promise<ImplementOutput>
 
   await updateSession(input.session_id, { status: 'IMPLEMENTING' });
 
-  const detail = await runCodexImplement(
-    session.worktreePath,
-    session.brief,
-    input.extra_instructions,
-  );
+  let detail: string;
+  try {
+    detail = await runCodexImplement(
+      session.worktreePath,
+      session.brief,
+      input.extra_instructions,
+    );
+  } catch (err) {
+    // Revert status to DRAFTING so the session remains usable
+    await updateSession(input.session_id, { status: 'DRAFTING' });
+    throw err;
+  }
 
   const diff_stat = worktreeGetDiff(session.worktreePath, true);
   await updateSession(input.session_id, { status: 'REVIEW' });

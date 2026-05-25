@@ -18,7 +18,7 @@ export async function merge(input: MergeInput): Promise<MergeOutput> {
   const targetBranch =
     input.target_branch ?? getCurrentBranch(session.projectPath);
 
-  const { success, conflicts } = mergeBranch(session.projectPath, session.branch);
+  const { success, conflicts } = mergeBranch(session.projectPath, session.branch, input.target_branch);
 
   if (!success) {
     return { success: false, merged_into: targetBranch, conflicts };

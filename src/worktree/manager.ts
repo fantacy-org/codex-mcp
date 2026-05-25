@@ -56,8 +56,19 @@ export function getCurrentBranch(projectPath: string): string {
 }
 
 export function getDiff(worktreePath: string, statOnly = false): string {
-  const args = ['diff', 'HEAD'];
+  // Try HEAD~1..HEAD first (shows what was committed by the last operation)
+  const parentCheck = git(['rev-parse', '--verify', 'HEAD~1'], worktreePath);
+
+  let args: string[];
+  if (parentCheck.status === 0) {
+    // Has a parent commit — show what the last commit changed
+    args = ['diff', 'HEAD~1', 'HEAD'];
+  } else {
+    // Initial commit — show what was added relative to empty tree
+    args = ['diff', '--cached', '--diff-filter=A'];
+  }
   if (statOnly) args.push('--stat');
+
   const result = git(args, worktreePath);
   if (result.status !== 0) {
     throw new Error(`git diff failed: ${result.stderr}`);
@@ -68,7 +79,16 @@ export function getDiff(worktreePath: string, statOnly = false): string {
 export function mergeBranch(
   projectPath: string,
   branch: string,
+  targetBranch?: string,
 ): { success: boolean; conflicts: string[] } {
+  // Checkout the target branch first if specified
+  if (targetBranch) {
+    const checkout = git(['checkout', targetBranch], projectPath);
+    if (checkout.status !== 0) {
+      throw new Error(`Failed to checkout target branch ${targetBranch}: ${checkout.stderr}`);
+    }
+  }
+
   const result = git(
     ['merge', branch, '--no-ff', '-m', `Merge task branch ${branch}`],
     projectPath,
