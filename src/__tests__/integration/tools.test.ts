@@ -108,6 +108,32 @@ describe('codex_implement', () => {
     expect(result.detail).toBe('Implementation complete');
     expect(typeof result.diff_stat).toBe('string');
   });
+
+  it('auto-commit uses brief.goal as commit message when Codex leaves files uncommitted', async () => {
+    const bridgeMod = await import('../../codex/bridge.js');
+    const { writeFileSync } = await import('fs');
+    const { join } = await import('path');
+    // Override once: simulate Codex writing a file but not committing
+    vi.mocked(bridgeMod.runCodexImplement).mockImplementationOnce(async (worktreePath) => {
+      writeFileSync(join(worktreePath, 'auth.ts'), 'export const auth = true;\n');
+      return 'Implementation done, sandbox prevented git commit';
+    });
+
+    const { createSession } = await import('../../tools/create-session.js');
+    const { implement } = await import('../../tools/implement.js');
+    const { session_id, worktree_path } = await createSession({
+      task: 'Add authentication feature',
+      project_path: projectDir,
+    });
+    await implement({ session_id });
+
+    // The auto-commit message should be derived from brief.goal (= task)
+    const subject = execSync('git log --format=%s -1', {
+      cwd: worktree_path,
+      encoding: 'utf8',
+    }).trim();
+    expect(subject).toContain('Add authentication feature');
+  });
 });
 
 describe('codex_get_diff', () => {

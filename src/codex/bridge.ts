@@ -1,5 +1,6 @@
 // src/codex/bridge.ts
 import { spawn, spawnSync } from 'child_process';
+import * as path from 'path';
 import type { Brief } from '../session/types.js';
 import { CodexNotFoundError, CodexTimeoutError, CodexExecutionError } from '../session/types.js';
 
@@ -11,8 +12,26 @@ const DEFAULT_TIMEOUT_MS = (() => {
 // Codex CLI v0.100+ uses the `exec` subcommand for non-interactive runs.
 // -s workspace-write  — allows the agent to write files in the worktree
 // -s read-only        — used for chat (no file changes)
-const CODEX_EXEC_WRITE_ARGS  = ['exec', '-s', 'workspace-write'];
+const CODEX_EXEC_WRITE_BASE  = ['exec', '-s', 'workspace-write'];
 const CODEX_EXEC_READONLY_ARGS = ['exec', '-s', 'read-only'];
+
+/**
+ * In a git worktree the `.git` entry is a FILE pointing to the common git dir
+ * (e.g. /project/.git/worktrees/<name>).  Codex's workspace-write sandbox only
+ * permits writes inside the worktree directory itself, so `git commit` fails
+ * because it must write to the common .git dir (objects, refs, worktrees/…).
+ * Passing `--add-dir <git-common-dir>` makes that directory writable inside the
+ * sandbox, allowing Codex to commit its changes directly.
+ */
+function getGitCommonDir(worktreePath: string): string | null {
+  const result = spawnSync('git', ['rev-parse', '--git-common-dir'], {
+    cwd: worktreePath,
+    encoding: 'utf8',
+    shell: false,
+  });
+  if (result.status !== 0 || !result.stdout.trim()) return null;
+  return path.resolve(worktreePath, result.stdout.trim());
+}
 
 export function findCodexCli(): string {
   const cmd = process.platform === 'win32' ? 'where' : 'which';
@@ -122,9 +141,15 @@ export async function runCodexImplement(
   extraInstructions?: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<string> {
+  // Add the git common dir as a writable sandbox path so Codex can commit.
+  const args = [...CODEX_EXEC_WRITE_BASE];
+  const gitCommonDir = getGitCommonDir(worktreePath);
+  if (gitCommonDir) {
+    args.push('--add-dir', gitCommonDir);
+  }
   return runCodex(
     worktreePath,
-    CODEX_EXEC_WRITE_ARGS,
+    args,
     buildImplementPrompt(brief, extraInstructions),
     timeoutMs,
   );

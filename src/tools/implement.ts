@@ -6,11 +6,15 @@ import { getDiff as worktreeGetDiff } from '../worktree/manager.js';
 
 /**
  * Auto-commit any files Codex left uncommitted in the worktree.
- * The Codex CLI writes files but does not always commit them; we commit
- * here so that getDiff (HEAD~1..HEAD) has something to show.
+ * The Codex CLI writes files but may fail to commit (e.g. workspace-write
+ * sandbox blocking .git writes in older setups); we commit here as a fallback
+ * so that getDiff (HEAD~1..HEAD) has something to show.
  * Returns true if a commit was made, false if the tree was already clean.
+ *
+ * @param worktreePath - absolute path to the git worktree
+ * @param goal - brief.goal used as the commit message subject (≤72 chars)
  */
-function autoCommitWorktree(worktreePath: string): boolean {
+function autoCommitWorktree(worktreePath: string, goal?: string): boolean {
   const git = (args: string[]) =>
     spawnSync('git', args, { cwd: worktreePath, encoding: 'utf8', shell: false });
 
@@ -21,10 +25,11 @@ function autoCommitWorktree(worktreePath: string): boolean {
   const status = git(['status', '--porcelain']);
   if (!status.stdout.trim()) return false;
 
+  const message = goal ? goal.slice(0, 72) : 'chore: codex implementation';
   git([
     '-c', 'user.email=codex-mcp@local',
     '-c', 'user.name=codex-mcp',
-    'commit', '-m', 'chore: codex implementation',
+    'commit', '-m', message,
   ]);
   return true;
 }
@@ -58,8 +63,9 @@ export async function implement(input: ImplementInput): Promise<ImplementOutput>
     throw err;
   }
 
-  // Commit any files Codex left uncommitted so getDiff has a HEAD to diff against
-  autoCommitWorktree(session.worktreePath);
+  // Commit any files Codex left uncommitted so getDiff has a HEAD to diff against.
+  // Prefer brief.goal (refined planning goal); fall back to session.task (original description).
+  autoCommitWorktree(session.worktreePath, session.brief.goal || session.task);
 
   const diff_stat = worktreeGetDiff(session.worktreePath, true);
   await updateSession(input.session_id, { status: 'REVIEW' });

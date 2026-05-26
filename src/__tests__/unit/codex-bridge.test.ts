@@ -133,3 +133,49 @@ describe('Codex Bridge — prompt construction', () => {
     expect(prompt).not.toContain('do not modify');
   });
 });
+
+describe('Codex Bridge — runCodexImplement passes --add-dir for worktree git access', () => {
+  beforeEach(() => vi.resetModules());
+
+  it('includes --add-dir <git-common-dir> in spawn args so Codex can commit inside worktree', async () => {
+    vi.doMock('child_process', () => {
+      const EventEmitter = require('events');
+      // Discriminate spawnSync calls by command/args
+      const spawnSyncMock = vi.fn().mockImplementation((cmd: string, args: string[]) => {
+        if (cmd === 'which' || cmd === 'where') {
+          // findCodexCli
+          return { status: 0, stdout: '/usr/bin/codex\n', stderr: '', pid: 1, output: [], signal: null };
+        }
+        if (cmd === 'git' && Array.isArray(args) && args.includes('--git-common-dir')) {
+          // getGitCommonDir
+          return { status: 0, stdout: '/fake/project/.git\n', stderr: '', pid: 1, output: [], signal: null };
+        }
+        return { status: 1, stdout: '', stderr: '', pid: 1, output: [], signal: null };
+      });
+      const spawnMock = vi.fn().mockImplementation(() => {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.kill = vi.fn();
+        setTimeout(() => {
+          child.stdout.emit('data', Buffer.from('done'));
+          child.emit('close', 0);
+        }, 10);
+        return child;
+      });
+      return { spawnSync: spawnSyncMock, spawn: spawnMock };
+    });
+
+    const { runCodexImplement } = await import('../../codex/bridge.js');
+    const { EMPTY_BRIEF } = await import('../../session/types.js');
+    await runCodexImplement('/fake/worktree', { ...EMPTY_BRIEF, goal: 'Add auth' });
+
+    const { spawn } = await import('child_process');
+    const spawnCalls = vi.mocked(spawn).mock.calls;
+    expect(spawnCalls.length).toBeGreaterThan(0);
+    const spawnArgs = spawnCalls[0]![1] as string[];
+    expect(spawnArgs).toContain('--add-dir');
+    const addDirIdx = spawnArgs.indexOf('--add-dir');
+    expect(spawnArgs[addDirIdx + 1]).toBe('/fake/project/.git');
+  });
+});
