@@ -94,16 +94,34 @@ function runCodex(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const codexPath = findCodexCli();
-    const child = spawn(codexPath, [...args, prompt], {
+
+    // On Windows two issues prevent passing the prompt as a CLI argument:
+    // 1. shell:true is required to execute .cmd files, but it concatenates args
+    //    without quoting — multi-word prompts are split into separate arguments.
+    // 2. Even with cmd /c + shell:false, cmd.exe treats embedded newlines in the
+    //    prompt as command separators, so only the first line is delivered.
+    // Fix: on Windows invoke cmd /c without the prompt arg, and write the prompt
+    // to stdin instead. Codex reads from stdin when no PROMPT arg is supplied.
+    const isWindows = process.platform === 'win32';
+    const [spawnCmd, spawnArgs] = isWindows
+      ? ['cmd', ['/c', codexPath, ...args]] as const
+      : [codexPath, [...args, prompt]] as const;
+
+    const child = spawn(spawnCmd, spawnArgs, {
       cwd,
-      shell: process.platform === 'win32', // .cmd files require shell on Windows
-      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+      stdio: [isWindows ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+
+    if (isWindows) {
+      child.stdin!.write(prompt);
+      child.stdin!.end();
+    }
 
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-    child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    child.stdout!.on('data', (d: Buffer) => { stdout += d.toString(); });
+    child.stderr!.on('data', (d: Buffer) => { stderr += d.toString(); });
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
