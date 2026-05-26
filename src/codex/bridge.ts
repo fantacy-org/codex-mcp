@@ -8,9 +8,11 @@ const DEFAULT_TIMEOUT_MS = (() => {
   return Number.isNaN(parsed) ? 300000 : parsed;
 })();
 
-// Args passed to every Codex CLI invocation for non-interactive execution.
-// Verify against installed Codex CLI version if behaviour is unexpected.
-const CODEX_NONINTERACTIVE_ARGS = ['--approval-mode', 'full-auto'];
+// Codex CLI v0.100+ uses the `exec` subcommand for non-interactive runs.
+// -s workspace-write  — allows the agent to write files in the worktree
+// -s read-only        — used for chat (no file changes)
+const CODEX_EXEC_WRITE_ARGS  = ['exec', '-s', 'workspace-write'];
+const CODEX_EXEC_READONLY_ARGS = ['exec', '-s', 'read-only'];
 
 export function findCodexCli(): string {
   const cmd = process.platform === 'win32' ? 'where' : 'which';
@@ -67,12 +69,13 @@ Follow all constraints and decisions.`;
 
 function runCodex(
   cwd: string,
+  args: string[],
   prompt: string,
   timeoutMs: number,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const codexPath = findCodexCli();
-    const child = spawn(codexPath, [...CODEX_NONINTERACTIVE_ARGS, prompt], {
+    const child = spawn(codexPath, [...args, prompt], {
       cwd,
       shell: process.platform === 'win32', // .cmd files require shell on Windows
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -110,7 +113,7 @@ export async function runCodexChat(
   message: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<string> {
-  return runCodex(worktreePath, buildChatPrompt(brief, message), timeoutMs);
+  return runCodex(worktreePath, CODEX_EXEC_READONLY_ARGS, buildChatPrompt(brief, message), timeoutMs);
 }
 
 export async function runCodexImplement(
@@ -121,6 +124,7 @@ export async function runCodexImplement(
 ): Promise<string> {
   return runCodex(
     worktreePath,
+    CODEX_EXEC_WRITE_ARGS,
     buildImplementPrompt(brief, extraInstructions),
     timeoutMs,
   );
